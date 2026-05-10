@@ -12,7 +12,6 @@ vet-clinic/
 ├── menus.py
 ├── queries.py
 ├── utils.py
-├── requirements.txt
 ├── schema.sql
 └── README.md
 ```
@@ -104,18 +103,6 @@ Examples:
 * Formatting outputs
 * Utility methods
 
----
-
-### `requirements.txt`
-
-Lists all Python packages required for the project.
-
-Example:
-
-```txt
-pyodbc
-tabulate
-```
 
 ---
 
