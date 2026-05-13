@@ -1,8 +1,5 @@
 import os
-import sqlite3
-from queries import execute_query
-
-DB_NAME = "clinic_database.db"
+from queries import execute_query, get_queries
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -12,27 +9,88 @@ def get_choice(prompt, valid_options):
         choice = input(prompt).strip()
         if choice in valid_options:
             return choice
-        print(f"❌ Selection error. Choose from available options: {', '.join(valid_options)}")
-
-def execute_query(query, params=(), fetch=False, return_last_id=False):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    results = None
-    try:
-        cursor.execute(query, params)
-        if fetch:
-            results = cursor.fetchall()
-        conn.commit()
-        if return_last_id:
-            results = cursor.lastrowid
-    except sqlite3.Error as e:
-        print(f"[SQL Error] {e}")
-    finally:
-        conn.close()
-    return results
+        print(f"❌ Selection error. Choose from: {', '.join(valid_options)}")
 
 # =====================================================================
-# 🛠️ 1. CLINIC OWNER DASHBOARD (FULL GLOBAL OVERRIDE PRIVILEGES)
+# 📊 CLINIC OWNER ANALYTICS DASHBOARD
+# =====================================================================
+def clinic_analytics_dashboard():
+    queries_dict = get_queries()
+    while True:
+        clear_screen()
+        print("========================================")
+        print("   📊 CLINIC OWNER: ANALYTICS BOARD    ")
+        print("========================================")
+        print("1. Most Visited Pet Species (Last Month)")
+        print("2. Dormant Clinics with Zero Visits")
+        print("3. Top Vaccinating Veterinarian")
+        print("4. Absent Owners with Zero Visits")
+        print("5. Vaccine Distribution Per Clinic")
+        print("6. Annual Patient Visit Summary")
+        print("7. ↩️ Return to Owner Control Panel")
+        print("========================================")
+        opt = get_choice("Select report to compile (1-7): ", ['1', '2', '3', '4', '5', '6', '7'])
+        
+        if opt == '1':
+            print("\n--- Most Visited Pet Species (Last Month) ---")
+            res = execute_query(queries_dict["max_species_visits"], fetch=True)
+            if res:
+                print(f"{'Species':<15} | {'Total Medical Visits'}")
+                print("-" * 38)
+                for r in res: print(f"{str(r[0]):<15} | {r[1]}")
+            else: print("📋 No visit data found for the previous month.")
+            
+        elif opt == '2':
+            print("\n--- Dormant Clinics with Zero Visits ---")
+            res = execute_query(queries_dict["clinics_no_visits"], fetch=True)
+            if res:
+                print(f"{'Clinic ID':<9} | {'Clinic Location'}")
+                print("-" * 35)
+                for r in res: print(f"{str(r[0]):<9} | {r[1]}")
+            else: print("✅ All clinic branches registered active visits last month.")
+            
+        elif opt == '3':
+            print("\n--- Top Vaccinating Veterinarian ---")
+            res = execute_query(queries_dict["top_vaccinating_vet"], fetch=True)
+            if res:
+                print(f"{'Vet ID':<8} | {'Total Immunizations Administered'}")
+                print("-" * 45)
+                for r in res: print(f"{str(r[0]):<8} | {r[1]}")
+            else: print("📋 No vaccination data recorded for the previous month.")
+            
+        elif opt == '4':
+            print("\n--- Absent Owners with Zero Visits ---")
+            res = execute_query(queries_dict["owners_no_visits"], fetch=True)
+            if res:
+                print(f"{'Owner ID':<9} | {'Registered Billing Address'}")
+                print("-" * 45)
+                for r in res: print(f"{str(r[0]):<9} | {r[1]}")
+            else: print("✅ All registered pet owners visited the clinic last month.")
+            
+        elif opt == '5':
+            print("\n--- Vaccine Distribution Per Clinic ---")
+            res = execute_query(queries_dict["vaccines_per_clinic"], fetch=True)
+            if res:
+                print(f"{'Clinic Location':<25} | {'Vaccine Type Administered'}")
+                print("-" * 55)
+                for r in res: print(f"{str(r[0]):<25} | {r[1]}")
+            else: print("📋 No historical vaccine records tracked last month.")
+            
+        elif opt == '6':
+            print("\n--- Annual Patient Visit Summary ---")
+            res = execute_query(queries_dict["pet_visits_this_year"], fetch=True)
+            if res:
+                print(f"{'Pet Name':<15} | {'Cumulative Visits This Year'}")
+                print("-" * 45)
+                for r in res: print(f"{str(r[0]):<15} | {r[1]}")
+            else: print("📋 No animal treatment charts populated this year.")
+            
+        elif opt == '7':
+            break
+        input("\nPress Enter to return to Analytics Dashboard...")
+
+# =====================================================================
+# 🛠️ CLINIC OWNER DESK (FULL READ/WRITE PRIVILEGES)
 # =====================================================================
 def admin_pet_menu():
     while True:
@@ -176,9 +234,10 @@ def run_admin_portal():
         print("1. Patient Profile Management Controls")
         print("2. Medical Records, Visits & Invoicing")
         print("3. Configure Branches & Veterinarians")
-        print("4. 🛑 Terminate Owner Management Session")
+        print("4. View Clinic Analytics & SQL Reports")
+        print("5. 🛑 Terminate Owner Management Session")
         print("========================================")
-        choice = get_choice("Enter command (1-4): ", ['1', '2', '3', '4'])
+        choice = get_choice("Enter command (1-5): ", ['1', '2', '3', '4', '5'])
         
         if choice == '1': admin_pet_menu()
         elif choice == '2': admin_visit_menu()
@@ -194,10 +253,12 @@ def run_admin_portal():
                     print(f"\n✅ Linked: Clinic ID {c_id} mapped to Vet ID {v_id}.")
             input("\nPress Enter to continue...")
         elif choice == '4':
+            clinic_analytics_dashboard()
+        elif choice == '5':
             break
 
 # =====================================================================
-# 🐾 2. PET OWNER PORTAL (STRICT DATA PRIVACY & ISOLATION ENFORCED)
+# 🐾 PET OWNER PORTAL (STRICT DATA PRIVACY & ISOLATION ENFORCED)
 # =====================================================================
 def run_user_portal():
     while True:
@@ -218,7 +279,6 @@ def run_user_portal():
             o_id = input("Enter your verified OwnerID passcode: ").strip()
             
             if p_id.isdigit() and o_id.isdigit():
-                # STRICT AUDIT CHECK: Validates relationship mapping before fetching data
                 check = execute_query("SELECT PetID FROM Pet WHERE PetID = ? AND OwnerID = ?", (int(p_id), int(o_id)), fetch=True)
                 if check:
                     results = execute_query("SELECT Date, ClinicalNote, PetWeight FROM MedicalVisit WHERE PetID = ?", (int(p_id),), fetch=True)
@@ -279,9 +339,6 @@ def run_user_portal():
             break
         input("\nPress Enter to continue...")
 
-# =====================================================================
-# 🔑 CENTRAL AUTHORIZATION CONTROL GATEWAY
-# =====================================================================
 def run_ui():
     while True:
         clear_screen()
