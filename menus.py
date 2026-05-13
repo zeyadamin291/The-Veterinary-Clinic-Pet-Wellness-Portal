@@ -100,16 +100,18 @@ def admin_pet_menu():
         print("========================================")
         print("1. Register New Pet & Owner Record")
         print("2. Search Specific Patient Profile")
-        print("3. Update Patient Information")
-        print("4. Delete Patient Profile (Hard Erase)")
-        print("5. View Global Facility Registry Board")
-        print("6. ↩️ Return to Owner Control Panel")
+        print("3. Update Pet Information")
+        print("4. Delete Pet Profile (Manual Wipe)")
+        print("5. Delete Owner Profile (Manual Wipe)")
+        print("6. View Global Facility Registry Board")
+        print("7. ↩️ Return to Owner Control Panel")
         print("========================================")
-        opt = get_choice("Select Action (1-6): ", ['1', '2', '3', '4', '5', '6'])
+        # Note: Valid choices updated to include '5' and shifting numbers up
+        opt = get_choice("Select Action (1-7): ", ['1', '2', '3', '4', '5', '6', '7'])
         
         if opt == '1':
-            print("\n--- Register New Pet/Owner ---")
-            contact = input("Enter Owner Emergency Contact: ").strip()
+            print("\n--- Register New Pet & Owner ---")
+            contact = input("Enter Owner Name: ").strip()
             address = input("Enter Owner Billing Address: ").strip()
             pet_name = input("Enter Pet Name: ").strip()
             species = input("Enter Pet Species: ").strip()
@@ -117,14 +119,48 @@ def admin_pet_menu():
             age = input("Enter Pet Age: ").strip()
             
             if contact and address and pet_name and species:
-                owner_id = execute_query("INSERT INTO Owner (EmergencyContact, BillingAddress) VALUES (?, ?)", (contact, address), return_last_id=True)
-                if owner_id:
-                    execute_query("INSERT INTO Pet (Age, Breed, Name, Species, OwnerID) VALUES (?, ?, ?, ?, ?)",
-                        (int(age) if age.isdigit() else None, breed, pet_name, species, owner_id))
-                    print(f"\n✅ Registered Pet '{pet_name}' linked to Owner ID: {owner_id}.")
-            else:
-                print("❌ Aborted. Missing mandatory fields.")
+                # 1. Check if the owner already exists in the database
+                existing_owner = execute_query(
+                    "SELECT OwnerID FROM Owner WHERE EmergencyContact = ?", 
+                    (contact,), 
+                    fetch=True
+                )
                 
+                if existing_owner:
+                    owner_id = existing_owner[0][0]
+                    
+                    # 2. Prevent Duplicate Pets: Check if this exact pet is already registered under this owner
+                    duplicate_pet = execute_query(
+                        "SELECT PetID FROM Pet WHERE Name = ? AND Species = ? AND OwnerID = ?",
+                        (pet_name, species, owner_id),
+                        fetch=True
+                    )
+                    
+                    if duplicate_pet:
+                        print(f"❌ [Aborted] Registration rejected! This Pet '{pet_name}' ({species}) is already registered under Owner ID: {owner_id}.")
+                        input("\nPress Enter to continue...")
+                        continue  # Skip the insertion and go back to the menu
+                else:
+                    # Owner does not exist -> Register as a new client profile
+                    owner_id = execute_query(
+                        "INSERT INTO Owner (EmergencyContact, BillingAddress) VALUES (?, ?)", 
+                        (contact, address), 
+                        return_last_id=True
+                    )
+                    print(f"\n✅ [System] New owner profile generated with Owner ID: {owner_id}.")
+                
+                if owner_id:
+                    # 3. Insert the new pet only if it passed all validation filters
+                    execute_query(
+                        "INSERT INTO Pet (Age, Breed, Name, Species, OwnerID) VALUES (?, ?, ?, ?, ?)",
+                        (int(age) if age.isdigit() else None, breed, pet_name, species, owner_id)
+                    )
+                    print(f"✅ Successfully registered Pet '{pet_name}' under Owner ID: {owner_id}.")
+                else:
+                    print("❌ Error: Failed to resolve owner account references.")
+            else:
+                print("❌ Aborted. Missing mandatory fields. Contact, Address, Pet Name, and Species are required.")
+
         elif opt == '2':
             print("\n--- Search Patient Profile ---")
             search = input("Enter Pet Name to query: ").strip()
@@ -148,18 +184,57 @@ def admin_pet_menu():
                 print(f"\n⚙️ Pet ID {pet_id} updated successfully.")
                 
         elif opt == '4':
-            print("\n--- Delete Patient Profile ---")
+            print("\n--- Delete Pet Profile (Manual Wipe) ---")
             pet_id = input("Enter Pet ID to PERMANENTLY ERASE: ").strip()
             if pet_id.isdigit():
-                confirm = input(f"⚠️ DANGER: Permanently delete Pet ID {pet_id}? (yes/no): ").strip().lower()
-                if confirm == 'yes':
-                    execute_query("DELETE FROM Pet WHERE PetID = ?", (int(pet_id),))
-                    print(f"🗑️ Record for Pet ID {pet_id} purged from storage.")
-                    
+                pet_check = execute_query("SELECT PetID FROM Pet WHERE PetID = ?", (int(pet_id),), fetch=True)
+                if pet_check:
+                    confirm = input(f"⚠️ WARNING: This will permanently delete Pet ID {pet_id} and ALL related medical/vaccination histories. Proceed? (yes/no): ").strip().lower()
+                    if confirm == 'yes':
+                        # 1. Clear vaccination sub-records linked to this pet's visits
+                        execute_query("DELETE FROM VaccinationRecord WHERE VisitID IN (SELECT VisitID FROM MedicalVisit WHERE PetID = ?)", (int(pet_id),))
+                        # 2. Clear medical visit journals linked to this pet
+                        execute_query("DELETE FROM MedicalVisit WHERE PetID = ?", (int(pet_id),))
+                        # 3. Wipe the pet record profile itself
+                        execute_query("DELETE FROM Pet WHERE PetID = ?", (int(pet_id),))
+                        print(f"🗑️ Clean Erase Success: Pet ID {pet_id} completely removed from system clusters.")
+                    else:
+                        print("❌ Operation aborted.")
+                else:
+                    print("❌ Error: Pet ID not found in database registries.")
+            else:
+                print("❌ Invalid input. Numeric PetID reference required.")
+                
         elif opt == '5':
+            print("\n--- Delete Owner Profile (Manual Wipe) ---")
+            owner_id = input("Enter Owner ID to PERMANENTLY ERASE: ").strip()
+            if owner_id.isdigit():
+                # Verify if the owner exists first
+                owner_check = execute_query("SELECT OwnerID FROM Owner WHERE OwnerID = ?", (int(owner_id),), fetch=True)
+                if owner_check:
+                    confirm = input(f"⚠️ WARNING: This will permanently delete Owner ID {owner_id} and ALL their linked pets/medical records. Proceed? (yes/no): ").strip().lower()
+                    if confirm == 'yes':
+                        # 1. Clear any linked sub-records to clean out constraints step-by-step
+                        execute_query("DELETE FROM VaccinationRecord WHERE VisitID IN (SELECT VisitID FROM MedicalVisit WHERE OwnerID = ?)", (int(owner_id),))
+                        execute_query("DELETE FROM MedicalVisit WHERE OwnerID = ?", (int(owner_id),))
+                        
+                        # 2. Clear out pets linked to this owner
+                        execute_query("DELETE FROM Pet WHERE OwnerID = ?", (int(owner_id),))
+                        
+                        # 3. Finally wipe the owner record itself safely
+                        execute_query("DELETE FROM Owner WHERE OwnerID = ?", (int(owner_id),))
+                        print(f"🗑️ Clean Erase Success: Owner ID {owner_id} and all related records completely removed.")
+                    else:
+                        print("❌ Operation aborted.")
+                else:
+                    print("❌ Error: Owner ID not found in active database registries.")
+            else:
+                print("❌ Invalid input format. Please type a numerical OwnerID.")
+                    
+        elif opt == '6':
             print("\n--- Global Patient Table Board ---")
             results = execute_query("SELECT PetID, Age, Breed, Name, Species, OwnerID FROM Pet", fetch=True)
-            if results:
+            if Bag := results:
                 print(f"{'PetID':<6} | {'Pet Name':<12} | {'Species':<10} | {'Breed':<12} | {'Age':<4} | {'OwnerID'}")
                 print("-" * 65)
                 for r in results:
@@ -167,7 +242,7 @@ def admin_pet_menu():
                     print(f"{row[0]:<6} | {row[3]:<12} | {row[4]:<10} | {row[2]:<12} | {row[1]:<4} | {row[5]}")
             else:
                 print("📋 Database records table is empty.")
-        elif opt == '6':
+        elif opt == '7':
             break
         input("\nPress Enter to continue...")
 
