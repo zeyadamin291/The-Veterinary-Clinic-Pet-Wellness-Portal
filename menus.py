@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from queries import execute_query
 
 DB_NAME = "clinic_database.db"
 
